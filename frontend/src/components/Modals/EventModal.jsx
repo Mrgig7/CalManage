@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useCalendar } from '../../context/CalendarContext';
 import { useAuth } from '../../context/AuthContext';
-import { X, Calendar, Clock, AlignLeft, Check, Sun, Video, Link2, Users, Search, Loader2, UserCheck, UserX, Sparkles, ChevronRight } from 'lucide-react';
+import { X, Calendar, Clock, AlignLeft, Check, Sun, Video, Link2, Users, Search, Loader2, UserCheck, UserX, Sparkles, ChevronRight, User, Briefcase, GraduationCap, Heart, Plane, DollarSign, Tag } from 'lucide-react';
 import GlassPanel from '../UI/GlassPanel';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -17,6 +17,9 @@ const EventModal = ({ isOpen, onClose, selectedDate, initialStartTime, initialEn
   const [error, setError] = useState('');
   const [isAllDay, setIsAllDay] = useState(false);
   const [eventDate, setEventDate] = useState('');
+  
+  // Category state
+  const [category, setCategory] = useState('');
   
   // Meeting state
   const [isMeeting, setIsMeeting] = useState(false);
@@ -76,6 +79,7 @@ const EventModal = ({ isOpen, onClose, selectedDate, initialStartTime, initialEn
     setError('');
     setIsAllDay(false);
     setEventDate('');
+    setCategory('');
     // Reset meeting fields
     setIsMeeting(false);
     setMeetingLink('');
@@ -293,6 +297,11 @@ const EventModal = ({ isOpen, onClose, selectedDate, initialStartTime, initialEn
       return;
     }
 
+    if (!category) {
+      setError('Please select an event category.');
+      return;
+    }
+
     // For all-day events, set times to start/end of day
     let eventStart, eventEnd;
     if (isAllDay) {
@@ -305,6 +314,7 @@ const EventModal = ({ isOpen, onClose, selectedDate, initialStartTime, initialEn
 
     const eventData = {
       title,
+      category,
       start: eventStart,
       end: eventEnd,
       description,
@@ -425,6 +435,55 @@ const EventModal = ({ isOpen, onClose, selectedDate, initialStartTime, initialEn
                       </div>
                       <div className="text-xs text-gray-500 mt-0.5">Invite attendees</div>
                     </button>
+                  </div>
+
+                  {/* Event Category Selector - REQUIRED */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-300 flex items-center gap-2">
+                      <Tag className="w-4 h-4 text-teal-400" />
+                      Category <span className="text-red-400">*</span>
+                    </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                      {[
+                        { id: 'personal', label: 'Personal', icon: User, color: 'blue', desc: 'Private tasks & reminders' },
+                        { id: 'business', label: 'Business', icon: Briefcase, color: 'indigo', desc: 'Work & meetings' },
+                        { id: 'academic', label: 'Academic', icon: GraduationCap, color: 'purple', desc: 'Classes & exams' },
+                        { id: 'health', label: 'Health', icon: Heart, color: 'rose', desc: 'Fitness & medical' },
+                        { id: 'social', label: 'Social', icon: Users, color: 'amber', desc: 'Gatherings & parties' },
+                        { id: 'travel', label: 'Travel', icon: Plane, color: 'cyan', desc: 'Trips & bookings' },
+                        { id: 'finance', label: 'Finance', icon: DollarSign, color: 'emerald', desc: 'Bills & payments' },
+                      ].map((cat) => {
+                        const Icon = cat.icon;
+                        const isSelected = category === cat.id;
+                        const colorMap = {
+                          blue: { bg: 'bg-blue-600/20', border: 'border-blue-500/50', text: 'text-blue-300', shadow: 'shadow-blue-500/15' },
+                          indigo: { bg: 'bg-indigo-600/20', border: 'border-indigo-500/50', text: 'text-indigo-300', shadow: 'shadow-indigo-500/15' },
+                          purple: { bg: 'bg-purple-600/20', border: 'border-purple-500/50', text: 'text-purple-300', shadow: 'shadow-purple-500/15' },
+                          rose: { bg: 'bg-rose-600/20', border: 'border-rose-500/50', text: 'text-rose-300', shadow: 'shadow-rose-500/15' },
+                          amber: { bg: 'bg-amber-600/20', border: 'border-amber-500/50', text: 'text-amber-300', shadow: 'shadow-amber-500/15' },
+                          cyan: { bg: 'bg-cyan-600/20', border: 'border-cyan-500/50', text: 'text-cyan-300', shadow: 'shadow-cyan-500/15' },
+                          emerald: { bg: 'bg-emerald-600/20', border: 'border-emerald-500/50', text: 'text-emerald-300', shadow: 'shadow-emerald-500/15' },
+                        };
+                        const colors = colorMap[cat.color];
+                        return (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onClick={() => setCategory(cat.id)}
+                            className={`p-2.5 rounded-xl border transition-all text-left ${
+                              isSelected
+                                ? `${colors.bg} ${colors.border} shadow-lg ${colors.shadow}`
+                                : 'bg-white/5 border-white/10 hover:bg-white/10'
+                            }`}
+                          >
+                            <div className={`text-xs font-medium flex items-center gap-1.5 ${isSelected ? colors.text : 'text-gray-300'}`}>
+                              <Icon className="w-3.5 h-3.5" />
+                              {cat.label}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
 
                   {/* All Day Toggle */}

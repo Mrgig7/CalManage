@@ -5,6 +5,7 @@ const Activity = require('../models/Activity');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
 const sendEmail = require('../utils/emailService');
+const { queueEmail } = require('../utils/emailQueue');
 
 const resolveCalendarAccess = async (calendarId, userId) => {
   const calendar = await Calendar.findById(calendarId);
@@ -46,7 +47,11 @@ const getEvents = async (req, res) => {
 // @route   POST /api/calendars/:calendarId/events
 // @access  Private
 const createEvent = async (req, res) => {
-  const { title, start, end, description, location, allDay, recurrence, reminders, participants } = req.body;
+  const { 
+    title, category, start, end, description, location, allDay, recurrence, reminders, participants,
+    // Meeting-specific fields
+    isMeeting, meetingLink, meetingPlatform, attendees 
+  } = req.body;
   const { calendarId } = req.params;
 
   const access = await resolveCalendarAccess(calendarId, req.user.id);
@@ -61,6 +66,7 @@ const createEvent = async (req, res) => {
     calendar: calendarId,
     createdBy: req.user.id,
     title,
+    category,
     start,
     end,
     description,
@@ -69,6 +75,11 @@ const createEvent = async (req, res) => {
     recurrence,
     reminders,
     participants,
+    // Meeting-specific fields
+    isMeeting: isMeeting || false,
+    meetingLink,
+    meetingPlatform,
+    attendees,
   });
 
   const calendar = access.calendar;
@@ -270,7 +281,7 @@ const createEvent = async (req, res) => {
   const uniqueEmails = Array.from(new Set(recipientEmails.filter(Boolean)));
   if (uniqueEmails.length > 0) {
     for (const email of uniqueEmails) {
-      await sendEmail(email, emailSubject, emailHtml);
+      queueEmail(email, emailSubject, emailHtml);
     }
   }
 
@@ -301,6 +312,7 @@ const updateEvent = async (req, res) => {
 
   const updateData = {};
   if (typeof req.body.title !== 'undefined') updateData.title = req.body.title;
+  if (typeof req.body.category !== 'undefined') updateData.category = req.body.category;
   if (typeof req.body.start !== 'undefined') updateData.start = req.body.start;
   if (typeof req.body.end !== 'undefined') updateData.end = req.body.end;
   if (typeof req.body.description !== 'undefined') updateData.description = req.body.description;
@@ -508,7 +520,7 @@ const deleteEvent = async (req, res) => {
   if (uniqueDeleteEmails.length > 0) {
     const deleteEmailSubject = `Event deleted from "${calendarName}": ${eventTitle}`;
     for (const email of uniqueDeleteEmails) {
-      await sendEmail(email, deleteEmailSubject, deleteEmailHtml);
+      queueEmail(email, deleteEmailSubject, deleteEmailHtml);
     }
   }
 

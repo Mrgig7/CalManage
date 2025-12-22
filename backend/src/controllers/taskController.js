@@ -20,6 +20,8 @@ const createTask = async (req, res) => {
   const task = await Task.create({
     text: req.body.text,
     user: req.user.id,
+    priority: req.body.priority || 'none',
+    dueDate: req.body.dueDate || null,
   });
 
   res.status(200).json(task);

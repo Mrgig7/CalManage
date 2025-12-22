@@ -25,6 +25,7 @@ app.use('/api/activity', require('./routes/activityRoutes'));
 app.use('/api/shares', require('./routes/shareRoutes')); // New mount for general share/invite routes
 app.use('/api/users', require('./routes/userRoutes')); // User preferences routes
 app.use('/api/availability', require('./routes/availabilityRoutes')); // Availability checking for meetings
+app.use('/api/search', require('./routes/searchRoutes')); // Search functionality
 
 // Start jobs
 require('./jobs/reminderJob')();

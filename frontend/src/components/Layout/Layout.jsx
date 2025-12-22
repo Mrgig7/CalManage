@@ -18,7 +18,17 @@ import {
   Folder,
   ChevronDown,
   ChevronRight,
-  Edit3
+  Edit3,
+  Loader2,
+  Clock,
+  FileText,
+  Tag,
+  User,
+  Briefcase,
+  GraduationCap,
+  Heart,
+  Plane,
+  DollarSign
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import CalendarModal from '../Modals/CalendarModal';
@@ -39,7 +49,9 @@ const Layout = () => {
     deleteGroup,
     toggleGroupVisibility,
     isGroupVisible,
-    isGroupPartiallyVisible
+    isGroupPartiallyVisible,
+    toggleCategoryFilter,
+    isCategorySelected
   } = useCalendar();
   const navigate = useNavigate();
   const location = useLocation();
@@ -65,12 +77,120 @@ const Layout = () => {
   const [selectedCalendarsForGroup, setSelectedCalendarsForGroup] = useState([]);
   const [expandedGroups, setExpandedGroups] = useState(new Set());
 
+  // Search State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState({ events: [], calendars: [], tasks: [] });
+  const [isSearching, setIsSearching] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [selectedSearchIndex, setSelectedSearchIndex] = useState(-1);
+  const [searchCategoryFilter, setSearchCategoryFilter] = useState('');
+  const searchRef = useRef(null);
+  const searchTimeoutRef = useRef(null);
+
   const handleLogout = () => {
     logout();
     navigate('/login');
   };
 
   const isActive = (path) => location.pathname === path;
+
+  // Search function with debounce
+  const performSearch = useCallback(async (query, categoryFilter = '') => {
+    if (!query || query.length < 2) {
+      setSearchResults({ events: [], calendars: [], tasks: [] });
+      setIsSearchOpen(false);
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      let url = `http://localhost:5000/api/search?q=${encodeURIComponent(query)}`;
+      if (categoryFilter) {
+        url += `&category=${encodeURIComponent(categoryFilter)}`;
+      }
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSearchResults(data);
+        setIsSearchOpen(true);
+        setSelectedSearchIndex(-1);
+      }
+    } catch (error) {
+      console.error('Search failed:', error);
+    } finally {
+      setIsSearching(false);
+    }
+  }, [token]);
+
+  const handleSearchChange = (e) => {
+    const query = e.target.value;
+    setSearchQuery(query);
+
+    // Debounce search
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    searchTimeoutRef.current = setTimeout(() => {
+      performSearch(query, searchCategoryFilter);
+    }, 300);
+  };
+
+  const handleCategoryFilterChange = (category) => {
+    setSearchCategoryFilter(category);
+    if (searchQuery.length >= 2) {
+      performSearch(searchQuery, category);
+    }
+  };
+
+  const handleSearchKeyDown = (e) => {
+    const allResults = [
+      ...searchResults.events.map(r => ({ ...r, type: 'event' })),
+      ...searchResults.calendars.map(r => ({ ...r, type: 'calendar' })),
+      ...searchResults.tasks.map(r => ({ ...r, type: 'task' }))
+    ];
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedSearchIndex(prev => Math.min(prev + 1, allResults.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedSearchIndex(prev => Math.max(prev - 1, -1));
+    } else if (e.key === 'Enter' && selectedSearchIndex >= 0) {
+      e.preventDefault();
+      handleSearchResultClick(allResults[selectedSearchIndex]);
+    } else if (e.key === 'Escape') {
+      setIsSearchOpen(false);
+      setSearchQuery('');
+    }
+  };
+
+  const handleSearchResultClick = (result) => {
+    setIsSearchOpen(false);
+    setSearchQuery('');
+
+    if (result.type === 'event') {
+      // Navigate to calendar with the event's date
+      const eventDate = new Date(result.start);
+      navigate('/calendar', { state: { selectedDate: eventDate } });
+    } else if (result.type === 'calendar') {
+      navigate('/calendar');
+    } else if (result.type === 'task') {
+      navigate('/tasks');
+    }
+  };
+
+  // Close search dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (searchRef.current && !searchRef.current.contains(event.target)) {
+        setIsSearchOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // ... (Keep existing notification logic unchanged) ...
   const getNotifications = useCallback(async (authToken) => {
@@ -214,6 +334,57 @@ const Layout = () => {
                     <NavItem to="/" icon={LayoutDashboard}>Dashboard</NavItem>
                     <NavItem to="/calendar" icon={CalendarIcon}>Calendar</NavItem>
                     <NavItem to="/tasks" icon={CheckSquare}>Tasks</NavItem>
+                  </nav>
+                </div>
+
+                {/* EVENT CATEGORIES Section */}
+                <div className="mb-6">
+                  <div className="flex items-center justify-between mb-2 px-2">
+                    <h3 className="text-[10px] font-bold text-teal-400 uppercase tracking-widest flex items-center gap-1">
+                      <Tag className="w-3 h-3" />
+                      Event Categories
+                    </h3>
+                  </div>
+                  <nav className="space-y-1">
+                    {[
+                      { id: 'personal', label: 'Personal', icon: User, color: '#3b82f6' },
+                      { id: 'business', label: 'Business', icon: Briefcase, color: '#6366f1' },
+                      { id: 'academic', label: 'Academic', icon: GraduationCap, color: '#8b5cf6' },
+                      { id: 'health', label: 'Health', icon: Heart, color: '#f43f5e' },
+                      { id: 'social', label: 'Social', icon: Users, color: '#f59e0b' },
+                      { id: 'travel', label: 'Travel', icon: Plane, color: '#06b6d4' },
+                      { id: 'finance', label: 'Finance', icon: DollarSign, color: '#10b981' },
+                    ].map((cat) => {
+                      const Icon = cat.icon;
+                      const isSelected = isCategorySelected(cat.id);
+                      return (
+                        <motion.div
+                          key={cat.id}
+                          whileHover={{ x: 4 }}
+                          onClick={() => toggleCategoryFilter(cat.id)}
+                          className={`flex items-center px-3 py-2 text-sm font-medium rounded-lg hover:bg-white/5 cursor-pointer group transition-all ${
+                            isSelected ? 'text-gray-300' : 'text-gray-600'
+                          }`}
+                        >
+                          <div
+                            className={`w-3 h-3 rounded-sm mr-3 border-2 flex items-center justify-center transition-all ${
+                              isSelected ? 'border-transparent' : 'border-gray-600'
+                            }`}
+                            style={{ backgroundColor: isSelected ? cat.color : 'transparent' }}
+                          >
+                            {isSelected && (
+                              <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </div>
+                          <Icon className="w-3.5 h-3.5 mr-2" style={{ color: isSelected ? cat.color : 'inherit' }} />
+                          <span className={`truncate transition-colors ${isSelected ? 'group-hover:text-white' : ''}`}>
+                            {cat.label}
+                          </span>
+                        </motion.div>
+                      );
+                    })}
                   </nav>
                 </div>
 
@@ -470,15 +641,281 @@ const Layout = () => {
           
           <div className="flex items-center space-x-6">
             {/* Search Bar */}
-            <div className="relative group hidden md:block">
+            <div className="relative group hidden md:block" ref={searchRef}>
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-4 w-4 text-indigo-300/50 group-focus-within:text-indigo-400 transition-colors" />
+                {isSearching ? (
+                  <Loader2 className="h-4 w-4 text-indigo-400 animate-spin" />
+                ) : (
+                  <Search className="h-4 w-4 text-indigo-300/50 group-focus-within:text-indigo-400 transition-colors" />
+                )}
               </div>
               <input
                 type="text"
+                value={searchQuery}
+                onChange={handleSearchChange}
+                onKeyDown={handleSearchKeyDown}
+                onFocus={() => searchQuery.length >= 2 && setIsSearchOpen(true)}
                 className="block w-64 pl-10 pr-3 py-2.5 border border-indigo-500/20 rounded-xl bg-white/5 text-white placeholder-indigo-300/30 focus:outline-none focus:bg-white/10 focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all text-sm backdrop-blur-sm"
-                placeholder="Search..."
+                placeholder="Search events, calendars..."
               />
+
+              {/* Search Results Dropdown */}
+              <AnimatePresence>
+                {isSearchOpen && (searchResults.events.length > 0 || searchResults.calendars.length > 0 || searchResults.tasks.length > 0) && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="absolute top-full left-0 right-0 mt-2 z-50"
+                  >
+                    <GlassPanel className="p-0 overflow-hidden bg-black/90 border-white/10 max-h-96 overflow-y-auto">
+                      {(() => {
+                        let globalIndex = -1;
+                        return (
+                          <>
+                            {/* Events Section */}
+                            {searchResults.events.length > 0 && (
+                              <div className="border-b border-white/5">
+                                <div className="px-3 py-2 text-[10px] font-bold text-indigo-400 uppercase tracking-wider bg-white/5 flex items-center gap-2">
+                                  <CalendarIcon className="w-3 h-3" />
+                                  Events
+                                </div>
+                                {searchResults.events.map((event) => {
+                                  globalIndex++;
+                                  const idx = globalIndex;
+                                  return (
+                                    <div
+                                      key={event._id}
+                                      onClick={() => handleSearchResultClick({ ...event, type: 'event' })}
+                                      className={`px-4 py-3 cursor-pointer transition-colors flex items-start gap-3 ${
+                                        selectedSearchIndex === idx ? 'bg-indigo-500/20' : 'hover:bg-white/5'
+                                      }`}
+                                    >
+                                      <div
+                                        className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
+                                        style={{ backgroundColor: event.calendarColor || '#3b82f6' }}
+                                      />
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                          <p className="text-sm text-white font-medium truncate">{event.title}</p>
+                                          {event.category && (() => {
+                                            const categoryInfo = {
+                                              personal: { color: '#3b82f6', label: 'Personal' },
+                                              business: { color: '#6366f1', label: 'Business' },
+                                              academic: { color: '#8b5cf6', label: 'Academic' },
+                                              health: { color: '#f43f5e', label: 'Health' },
+                                              social: { color: '#f59e0b', label: 'Social' },
+                                              travel: { color: '#06b6d4', label: 'Travel' },
+                                              finance: { color: '#10b981', label: 'Finance' },
+                                            }[event.category];
+                                            return categoryInfo ? (
+                                              <span 
+                                                className="text-[9px] px-1.5 py-0.5 rounded-full font-medium"
+                                                style={{ 
+                                                  backgroundColor: `${categoryInfo.color}20`,
+                                                  color: categoryInfo.color
+                                                }}
+                                              >
+                                                {categoryInfo.label}
+                                              </span>
+                                            ) : null;
+                                          })()}
+                                        </div>
+                                        <div className="flex items-center gap-2 mt-1">
+                                          <Clock className="w-3 h-3 text-gray-500" />
+                                          <span className="text-[11px] text-gray-400">
+                                            {new Date(event.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                          </span>
+                                          {event.calendarName && (
+                                            <span className="text-[10px] text-gray-500">• {event.calendarName}</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {/* Calendars Section */}
+                            {searchResults.calendars.length > 0 && (
+                              <div className="border-b border-white/5">
+                                <div className="px-3 py-2 text-[10px] font-bold text-green-400 uppercase tracking-wider bg-white/5 flex items-center gap-2">
+                                  <Folder className="w-3 h-3" />
+                                  Calendars
+                                </div>
+                                {searchResults.calendars.map((cal) => {
+                                  const isVisible = isCalendarVisible(cal._id);
+                                  return (
+                                    <div
+                                      key={cal._id}
+                                      onClick={() => toggleCalendarVisibility(cal._id)}
+                                      className="px-4 py-3 cursor-pointer transition-colors flex items-center gap-3 hover:bg-white/5"
+                                    >
+                                      <div
+                                        className={`w-3 h-3 rounded-sm flex items-center justify-center transition-all ${
+                                          isVisible ? 'border-transparent' : 'border-2 border-gray-600'
+                                        }`}
+                                        style={{ backgroundColor: isVisible ? cal.color || '#3b82f6' : 'transparent' }}
+                                      >
+                                        {isVisible && (
+                                          <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                          </svg>
+                                        )}
+                                      </div>
+                                      <span className={`text-sm ${isVisible ? 'text-white' : 'text-gray-500'}`}>{cal.name}</span>
+                                      {cal.isShared && (
+                                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-400">Shared</span>
+                                      )}
+                                      <span 
+                                        className="text-[9px] px-1.5 py-0.5 rounded-full font-medium ml-auto"
+                                        style={{ 
+                                          backgroundColor: isVisible ? `${cal.color || '#3b82f6'}20` : 'rgba(255,255,255,0.05)',
+                                          color: isVisible ? cal.color || '#3b82f6' : '#6b7280'
+                                        }}
+                                      >
+                                        {isVisible ? 'Visible' : 'Hidden'}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {/* Categories Section - Show matching categories */}
+                            {(() => {
+                              const allCategories = [
+                                { id: 'personal', label: 'Personal', icon: User, color: '#3b82f6' },
+                                { id: 'business', label: 'Business', icon: Briefcase, color: '#6366f1' },
+                                { id: 'academic', label: 'Academic', icon: GraduationCap, color: '#8b5cf6' },
+                                { id: 'health', label: 'Health', icon: Heart, color: '#f43f5e' },
+                                { id: 'social', label: 'Social', icon: Users, color: '#f59e0b' },
+                                { id: 'travel', label: 'Travel', icon: Plane, color: '#06b6d4' },
+                                { id: 'finance', label: 'Finance', icon: DollarSign, color: '#10b981' },
+                              ];
+                              const matchingCategories = allCategories.filter(cat => 
+                                cat.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                cat.id.toLowerCase().includes(searchQuery.toLowerCase())
+                              );
+                              
+                              if (matchingCategories.length === 0) return null;
+                              
+                              return (
+                                <div className="border-b border-white/5">
+                                  <div className="px-3 py-2 text-[10px] font-bold text-teal-400 uppercase tracking-wider bg-white/5 flex items-center gap-2">
+                                    <Tag className="w-3 h-3" />
+                                    Categories
+                                  </div>
+                                  {matchingCategories.map((cat) => {
+                                    const Icon = cat.icon;
+                                    const isSelected = isCategorySelected(cat.id);
+                                    return (
+                                      <div
+                                        key={cat.id}
+                                        onClick={() => {
+                                          toggleCategoryFilter(cat.id);
+                                        }}
+                                        className="px-4 py-3 cursor-pointer transition-colors flex items-center gap-3 hover:bg-white/5"
+                                      >
+                                        <div
+                                          className={`w-3 h-3 rounded-sm flex items-center justify-center transition-all ${
+                                            isSelected ? 'border-transparent' : 'border-2 border-gray-600'
+                                          }`}
+                                          style={{ backgroundColor: isSelected ? cat.color : 'transparent' }}
+                                        >
+                                          {isSelected && (
+                                            <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                            </svg>
+                                          )}
+                                        </div>
+                                        <Icon className="w-4 h-4" style={{ color: cat.color }} />
+                                        <span className="text-sm text-white">{cat.label}</span>
+                                        <span 
+                                          className="text-[9px] px-1.5 py-0.5 rounded-full font-medium ml-auto"
+                                          style={{ 
+                                            backgroundColor: `${cat.color}20`,
+                                            color: cat.color
+                                          }}
+                                        >
+                                          {isSelected ? 'Visible' : 'Hidden'}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })()}
+
+                            {/* Tasks Section */}
+                            {searchResults.tasks.length > 0 && (
+                              <div>
+                                <div className="px-3 py-2 text-[10px] font-bold text-amber-400 uppercase tracking-wider bg-white/5 flex items-center gap-2">
+                                  <CheckSquare className="w-3 h-3" />
+                                  Tasks
+                                </div>
+                                {searchResults.tasks.map((task) => {
+                                  globalIndex++;
+                                  const idx = globalIndex;
+                                  return (
+                                    <div
+                                      key={task._id}
+                                      onClick={() => handleSearchResultClick({ ...task, type: 'task' })}
+                                      className={`px-4 py-3 cursor-pointer transition-colors flex items-center gap-3 ${
+                                        selectedSearchIndex === idx ? 'bg-indigo-500/20' : 'hover:bg-white/5'
+                                      }`}
+                                    >
+                                      <div className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center ${
+                                        task.completed ? 'bg-green-500/20 border-green-500' : 'border-gray-500'
+                                      }`}>
+                                        {task.completed && (
+                                          <svg className="w-2.5 h-2.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                          </svg>
+                                        )}
+                                      </div>
+                                      <span className={`text-sm flex-1 truncate ${task.completed ? 'text-gray-500 line-through' : 'text-white'}`}>
+                                        {task.text}
+                                      </span>
+                                      {task.priority && task.priority !== 'none' && (
+                                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${
+                                          task.priority === 'high' ? 'bg-red-500/20 text-red-400' :
+                                          task.priority === 'medium' ? 'bg-yellow-500/20 text-yellow-400' :
+                                          'bg-blue-500/20 text-blue-400'
+                                        }`}>
+                                          {task.priority}
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </GlassPanel>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* No Results Message */}
+              <AnimatePresence>
+                {isSearchOpen && searchQuery.length >= 2 && !isSearching && 
+                 searchResults.events.length === 0 && searchResults.calendars.length === 0 && searchResults.tasks.length === 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="absolute top-full left-0 right-0 mt-2 z-50"
+                  >
+                    <GlassPanel className="p-4 bg-black/90 border-white/10">
+                      <p className="text-sm text-gray-400 text-center">No results found for "{searchQuery}"</p>
+                    </GlassPanel>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             <div className="relative" ref={notificationRef}>
