@@ -3,6 +3,9 @@ import { useAuth } from './AuthContext';
 
 const CalendarContext = createContext();
 
+// Cache duration in milliseconds (5 minutes)
+const CACHE_DURATION = 5 * 60 * 1000;
+
 export const CalendarProvider = ({ children }) => {
   const [calendars, setCalendars] = useState([]);
   const [sharedCalendars, setSharedCalendars] = useState([]);
@@ -11,6 +14,17 @@ export const CalendarProvider = ({ children }) => {
   const [groups, setGroups] = useState([]);
   const [visibleCalendarIds, setVisibleCalendarIds] = useState(new Set());
   const { token, user } = useAuth();
+
+  // ========== CACHING SYSTEM ==========
+  // Centralized event cache: { calendarId: { events: [], timestamp: Date } }
+  const [eventCache, setEventCache] = useState({});
+  const [allCachedEvents, setAllCachedEvents] = useState([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventsLoaded, setEventsLoaded] = useState(false);
+  const eventLoadPromiseRef = useRef(null);
+  
+  // Track if we've done the initial load to prevent re-triggering
+  const initialLoadDoneRef = useRef(false);
 
   const calendarsRef = useRef(calendars);
   const sharedCalendarsRef = useRef(sharedCalendars);
@@ -65,9 +79,13 @@ export const CalendarProvider = ({ children }) => {
     }
   }, [user]);
 
-  // Initialize visibility when calendars are loaded
+  // Track if visibility has been initialized
+  const visibilityInitializedRef = useRef(false);
+
+  // Initialize visibility when calendars are loaded (only once)
   useEffect(() => {
-    if (calendars.length > 0 || sharedCalendars.length > 0) {
+    if ((calendars.length > 0 || sharedCalendars.length > 0) && !visibilityInitializedRef.current) {
+      visibilityInitializedRef.current = true;
       const savedVisibility = loadVisibilityPreferences();
       if (savedVisibility && savedVisibility.size > 0) {
         setVisibleCalendarIds(savedVisibility);
@@ -80,7 +98,7 @@ export const CalendarProvider = ({ children }) => {
         setVisibleCalendarIds(allIds);
       }
     }
-  }, [calendars, sharedCalendars, loadVisibilityPreferences]);
+  }, [calendars.length, sharedCalendars.length, calendars, sharedCalendars, loadVisibilityPreferences]);
 
   // Load groups on mount
   useEffect(() => {
@@ -329,35 +347,153 @@ export const CalendarProvider = ({ children }) => {
     }
   };
 
-  const fetchEvents = async (calendarId) => {
-    try {
-      const res = await fetch(`http://localhost:5000/api/calendars/${calendarId}/events`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setEvents(data);
+  // Optimized: Fetch single calendar events with caching
+  const fetchCalendarEvents = useCallback(async (calendarId, forceRefresh = false) => {
+    // Check cache first (if not forcing refresh)
+    if (!forceRefresh && eventCache[calendarId]) {
+      const { events: cachedEvents, timestamp } = eventCache[calendarId];
+      const isStale = Date.now() - timestamp > CACHE_DURATION;
+      
+      // Return cached immediately (stale-while-revalidate)
+      if (!isStale) {
+        return cachedEvents;
       }
-    } catch (error) {
-      console.error(error);
     }
-  };
 
-  const fetchCalendarEvents = useCallback(async (calendarId) => {
     try {
       const res = await fetch(`http://localhost:5000/api/calendars/${calendarId}/events`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
       if (res.ok) {
+        // Update cache
+        setEventCache(prev => ({
+          ...prev,
+          [calendarId]: { events: data, timestamp: Date.now() }
+        }));
         return data;
       }
-      return [];
+      return eventCache[calendarId]?.events || [];
     } catch (error) {
       console.error(error);
-      return [];
+      return eventCache[calendarId]?.events || [];
     }
-  }, [token]);
+  }, [token, eventCache]);
+
+  // Refs to track loading state without causing re-renders
+  const eventsLoadedRef = useRef(false);
+  const allCachedEventsRef = useRef([]);
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    eventsLoadedRef.current = eventsLoaded;
+  }, [eventsLoaded]);
+
+  useEffect(() => {
+    allCachedEventsRef.current = allCachedEvents;
+  }, [allCachedEvents]);
+
+  // Optimized: Load ALL events for ALL calendars in parallel with caching
+  // Optional calendarsList and sharedCalendarsList parameters to avoid race condition with refs
+  const loadAllEvents = useCallback(async (forceRefresh = false, calendarsList = null, sharedCalendarsList = null) => {
+    // If already loading, return the existing promise
+    if (eventLoadPromiseRef.current && !forceRefresh) {
+      return eventLoadPromiseRef.current;
+    }
+
+    // If already loaded and not forcing refresh, return cached (use ref to avoid dependency)
+    if (eventsLoadedRef.current && !forceRefresh && allCachedEventsRef.current.length > 0) {
+      return allCachedEventsRef.current;
+    }
+
+    setEventsLoading(true);
+
+    const loadPromise = (async () => {
+      // Use provided calendars or fall back to refs
+      const ownCals = calendarsList || calendarsRef.current;
+      const sharedCals = sharedCalendarsList || sharedCalendarsRef.current || [];
+      const allCals = [...ownCals, ...sharedCals];
+      
+      if (allCals.length === 0) {
+        setEventsLoading(false);
+        setEventsLoaded(true);
+        return [];
+      }
+
+      try {
+        // Parallel fetch for ALL calendars at once
+        const eventPromises = allCals.map(async (cal) => {
+          try {
+            const res = await fetch(`http://localhost:5000/api/calendars/${cal._id}/events`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            const data = await res.json();
+            if (res.ok) {
+              return {
+                calendarId: cal._id,
+                events: data.map(ev => ({
+                  ...ev,
+                  color: cal.color,
+                  calendarName: cal.name,
+                  calendarId: cal._id,
+                  isShared: cal.isShared || false,
+                  ownerName: cal.owner?.name
+                }))
+              };
+            }
+            return { calendarId: cal._id, events: [] };
+          } catch {
+            return { calendarId: cal._id, events: [] };
+          }
+        });
+
+        const results = await Promise.all(eventPromises);
+
+        // Update cache for each calendar
+        const newCache = {};
+        let allEvents = [];
+        
+        for (const result of results) {
+          newCache[result.calendarId] = { 
+            events: result.events, 
+            timestamp: Date.now() 
+          };
+          allEvents = [...allEvents, ...result.events];
+        }
+
+        setEventCache(prev => ({ ...prev, ...newCache }));
+        setAllCachedEvents(allEvents);
+        setEventsLoaded(true);
+        setEventsLoading(false);
+        eventLoadPromiseRef.current = null;
+        
+        return allEvents;
+      } catch (error) {
+        console.error('Error loading all events:', error);
+        setEventsLoading(false);
+        eventLoadPromiseRef.current = null;
+        return allCachedEventsRef.current;
+      }
+    })();
+
+    eventLoadPromiseRef.current = loadPromise;
+    return loadPromise;
+  }, [token]); // Only depends on token now - no more circular dependency
+
+  // Auto-load events when calendars change (only once per session, not on every calendar change)
+  useEffect(() => {
+    if ((calendars.length > 0 || sharedCalendars.length > 0) && !initialLoadDoneRef.current) {
+      initialLoadDoneRef.current = true;
+      // Pass calendars directly to avoid race condition with refs
+      loadAllEvents(false, calendars, sharedCalendars);
+    }
+  }, [calendars, sharedCalendars, loadAllEvents]);
+
+  // Legacy fetchEvents for backward compatibility
+  const fetchEvents = async (calendarId) => {
+    const events = await fetchCalendarEvents(calendarId);
+    setEvents(events);
+  };
 
   const addEvent = async (calendarId, eventData) => {
     try {
@@ -371,8 +507,31 @@ export const CalendarProvider = ({ children }) => {
       });
       const data = await res.json();
       if (res.ok) {
+        // Find the calendar to get color and name
+        const cal = [...calendarsRef.current, ...sharedCalendarsRef.current].find(c => c._id === calendarId);
+        const enrichedEvent = {
+          ...data,
+          color: cal?.color,
+          calendarName: cal?.name,
+          calendarId: calendarId,
+          isShared: cal?.isShared || false,
+          ownerName: cal?.owner?.name
+        };
+        
+        // Update legacy events state
         setEvents(prev => [...prev, data]);
-        return { success: true, event: data };
+        
+        // Update cache immediately
+        setAllCachedEvents(prev => [...prev, enrichedEvent]);
+        setEventCache(prev => ({
+          ...prev,
+          [calendarId]: {
+            events: [...(prev[calendarId]?.events || []), enrichedEvent],
+            timestamp: Date.now()
+          }
+        }));
+        
+        return { success: true, event: enrichedEvent };
       }
       return { success: false, error: data.message || 'Failed to create event' };
     } catch (error) {
@@ -390,7 +549,19 @@ export const CalendarProvider = ({ children }) => {
         },
       });
       if (res.ok) {
+        // Update legacy events state
         setEvents(prev => prev.filter(e => e._id !== eventId));
+        
+        // Update cache immediately
+        setAllCachedEvents(prev => prev.filter(e => e._id !== eventId));
+        setEventCache(prev => ({
+          ...prev,
+          [calendarId]: {
+            events: (prev[calendarId]?.events || []).filter(e => e._id !== eventId),
+            timestamp: Date.now()
+          }
+        }));
+        
         return { success: true };
       }
       const data = await res.json();
@@ -407,14 +578,19 @@ export const CalendarProvider = ({ children }) => {
               headers: { Authorization: `Bearer ${token}` },
           });
           const data = await res.json();
+          console.log('[CalendarContext] Fetched shares response:', data);
           if (res.ok) {
-              const shared = data.map(share => ({
+              // Filter out any shares where calendar is null (e.g., deleted calendars)
+              const validShares = data.filter(share => share && share.calendar);
+              console.log('[CalendarContext] Valid shares after filtering:', validShares);
+              const shared = validShares.map(share => ({
                   ...share.calendar,
                   _id: share.calendar._id,
                   role: share.role,
                   owner: share.calendar.user,
                   isShared: true,
               }));
+              console.log('[CalendarContext] Mapped shared calendars:', shared);
               const colored = assignColors(calendarsRef.current, shared);
               setCalendars(colored.calendars);
               setSharedCalendars(colored.sharedCalendars);
@@ -423,7 +599,7 @@ export const CalendarProvider = ({ children }) => {
           setSharedCalendars([]);
           return [];
       } catch (error) {
-          console.error(error);
+          console.error('[CalendarContext] Error fetching shared calendars:', error);
           setSharedCalendars([]);
           return [];
       }
@@ -461,6 +637,11 @@ export const CalendarProvider = ({ children }) => {
     loading,
     groups,
     visibleCalendarIds,
+    // Caching system
+    allCachedEvents,
+    eventsLoading,
+    eventsLoaded,
+    loadAllEvents,
     // Calendar CRUD
     addCalendar,
     fetchCalendars,
@@ -483,6 +664,7 @@ export const CalendarProvider = ({ children }) => {
     isGroupPartiallyVisible,
   }), [
     calendars, sharedCalendars, events, loading, groups, visibleCalendarIds,
+    allCachedEvents, eventsLoading, eventsLoaded, loadAllEvents,
     fetchCalendars, fetchCalendarEvents, fetchSharedCalendars,
     toggleCalendarVisibility, setCalendarsVisible, isCalendarVisible,
     addGroup, updateGroup, deleteGroup, toggleGroupVisibility, isGroupVisible, isGroupPartiallyVisible

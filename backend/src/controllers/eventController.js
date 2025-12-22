@@ -5,6 +5,7 @@ const Activity = require('../models/Activity');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
 const sendEmail = require('../utils/emailService');
+const { queueEmail } = require('../utils/emailQueue');
 
 const resolveCalendarAccess = async (calendarId, userId) => {
   const calendar = await Calendar.findById(calendarId);
@@ -46,7 +47,11 @@ const getEvents = async (req, res) => {
 // @route   POST /api/calendars/:calendarId/events
 // @access  Private
 const createEvent = async (req, res) => {
-  const { title, start, end, description, location, allDay, recurrence, reminders, participants } = req.body;
+  const { 
+    title, start, end, description, location, allDay, recurrence, reminders, participants,
+    // Meeting-specific fields
+    isMeeting, meetingLink, meetingPlatform, attendees 
+  } = req.body;
   const { calendarId } = req.params;
 
   const access = await resolveCalendarAccess(calendarId, req.user.id);
@@ -69,6 +74,11 @@ const createEvent = async (req, res) => {
     recurrence,
     reminders,
     participants,
+    // Meeting-specific fields
+    isMeeting: isMeeting || false,
+    meetingLink,
+    meetingPlatform,
+    attendees,
   });
 
   const calendar = access.calendar;
@@ -270,7 +280,7 @@ const createEvent = async (req, res) => {
   const uniqueEmails = Array.from(new Set(recipientEmails.filter(Boolean)));
   if (uniqueEmails.length > 0) {
     for (const email of uniqueEmails) {
-      await sendEmail(email, emailSubject, emailHtml);
+      queueEmail(email, emailSubject, emailHtml);
     }
   }
 
@@ -508,7 +518,7 @@ const deleteEvent = async (req, res) => {
   if (uniqueDeleteEmails.length > 0) {
     const deleteEmailSubject = `Event deleted from "${calendarName}": ${eventTitle}`;
     for (const email of uniqueDeleteEmails) {
-      await sendEmail(email, deleteEmailSubject, deleteEmailHtml);
+      queueEmail(email, deleteEmailSubject, deleteEmailHtml);
     }
   }
 

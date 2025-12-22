@@ -4,6 +4,7 @@ const Calendar = require('../models/Calendar');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
 const sendEmail = require('../utils/emailService');
+const { queueEmail } = require('../utils/emailQueue');
 
 // @desc    Share a calendar
 // @route   POST /api/shares
@@ -190,7 +191,7 @@ const shareCalendar = async (req, res) => {
       </html>
     `;
 
-    await sendEmail(email, `${req.user.name} invited you to join "${calendar.name}" calendar`, emailHtml);
+    queueEmail(email, `${req.user.name} invited you to join "${calendar.name}" calendar`, emailHtml);
 
     res.status(200).json({ message: 'Invitation email sent' });
   }
