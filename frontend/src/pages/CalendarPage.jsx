@@ -36,6 +36,7 @@ const CalendarPage = () => {
         sharedCalendars, 
         deleteEvent, 
         visibleCalendarIds,
+        selectedCategories,
         // Use cached events from context
         allCachedEvents,
         eventsLoading,
@@ -50,9 +51,16 @@ const CalendarPage = () => {
 
     // Use cached events directly - no more loading on every navigation
     // Events are already enriched with calendar info in context
+    // Filter by BOTH calendar visibility AND category visibility
     const events = useMemo(() => {
-        return allCachedEvents.filter(ev => visibleCalendarIds.has(ev.calendarId));
-    }, [allCachedEvents, visibleCalendarIds]);
+        return allCachedEvents.filter(ev => {
+            // Must be in a visible calendar
+            if (!visibleCalendarIds.has(ev.calendarId)) return false;
+            // Must be in a selected category (or have no category for legacy events)
+            if (ev.category && !selectedCategories.has(ev.category)) return false;
+            return true;
+        });
+    }, [allCachedEvents, visibleCalendarIds, selectedCategories]);
 
     const nextPeriod = () => {
         if (view === 'month') setCurrentDate(addMonths(currentDate, 1));

@@ -72,6 +72,7 @@ const Dashboard = () => {
     calendars, 
     sharedCalendars, 
     visibleCalendarIds,
+    selectedCategories,
     // Use cached events from context
     allCachedEvents,
     eventsLoading
@@ -126,16 +127,23 @@ const Dashboard = () => {
   }, [token]);
 
   // Use cached events - filter to today's events only
+  // Also filter by BOTH calendar visibility AND category visibility
   const todaysEvents = useMemo(() => {
     const today = startOfToday();
     return allCachedEvents
-      .filter(ev => visibleCalendarIds.has(ev.calendarId))
+      .filter(ev => {
+        // Must be in a visible calendar
+        if (!visibleCalendarIds.has(ev.calendarId)) return false;
+        // Must be in a selected category (or have no category for legacy events)
+        if (ev.category && !selectedCategories.has(ev.category)) return false;
+        return true;
+      })
       .filter(ev => {
         const start = new Date(ev.start);
         return isSameDay(start, today);
       })
       .sort((a, b) => compareAsc(new Date(a.start), new Date(b.start)));
-  }, [allCachedEvents, visibleCalendarIds]);
+  }, [allCachedEvents, visibleCalendarIds, selectedCategories]);
 
   const now = new Date();
   

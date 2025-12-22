@@ -13,6 +13,7 @@ export const CalendarProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [groups, setGroups] = useState([]);
   const [visibleCalendarIds, setVisibleCalendarIds] = useState(new Set());
+  const [selectedCategories, setSelectedCategories] = useState(new Set());
   const { token, user } = useAuth();
 
   // ========== CACHING SYSTEM ==========
@@ -79,6 +80,27 @@ export const CalendarProvider = ({ children }) => {
     }
   }, [user]);
 
+  // Load category filter preferences from localStorage
+  const loadCategoryPreferences = useCallback(() => {
+    if (!user || !user._id) return null;
+    try {
+      const raw = localStorage.getItem(`categoryFilters:${user._id}`);
+      return raw ? new Set(JSON.parse(raw)) : null;
+    } catch {
+      return null;
+    }
+  }, [user]);
+
+  // Save category filter preferences to localStorage
+  const saveCategoryPreferences = useCallback((categories) => {
+    if (!user || !user._id) return;
+    try {
+      localStorage.setItem(`categoryFilters:${user._id}`, JSON.stringify([...categories]));
+    } catch {
+      // Ignore storage errors
+    }
+  }, [user]);
+
   // Track if visibility has been initialized
   const visibilityInitializedRef = useRef(false);
 
@@ -104,8 +126,16 @@ export const CalendarProvider = ({ children }) => {
   useEffect(() => {
     if (user) {
       setGroups(loadGroups());
+      // Load category preferences
+      const savedCategories = loadCategoryPreferences();
+      if (savedCategories && savedCategories.size > 0) {
+        setSelectedCategories(savedCategories);
+      } else {
+        // Default: all categories visible
+        setSelectedCategories(new Set(['personal', 'business', 'academic', 'health', 'social', 'travel', 'finance']));
+      }
     }
-  }, [user, loadGroups]);
+  }, [user, loadGroups, loadCategoryPreferences]);
 
   // Toggle calendar visibility
   const toggleCalendarVisibility = useCallback((calendarId) => {
@@ -141,6 +171,38 @@ export const CalendarProvider = ({ children }) => {
   const isCalendarVisible = useCallback((calendarId) => {
     return visibleCalendarIds.has(calendarId);
   }, [visibleCalendarIds]);
+
+  // Category filter functions
+  const toggleCategoryFilter = useCallback((category) => {
+    setSelectedCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(category)) {
+        next.delete(category);
+      } else {
+        next.add(category);
+      }
+      saveCategoryPreferences(next);
+      return next;
+    });
+  }, [saveCategoryPreferences]);
+
+  // Check if category is selected
+  const isCategorySelected = useCallback((category) => {
+    return selectedCategories.has(category);
+  }, [selectedCategories]);
+
+  // Select all categories
+  const selectAllCategories = useCallback(() => {
+    const all = new Set(['personal', 'business', 'academic', 'health', 'social', 'travel', 'finance']);
+    setSelectedCategories(all);
+    saveCategoryPreferences(all);
+  }, [saveCategoryPreferences]);
+
+  // Clear all categories
+  const clearAllCategories = useCallback(() => {
+    setSelectedCategories(new Set());
+    saveCategoryPreferences(new Set());
+  }, [saveCategoryPreferences]);
 
   // Group management functions
   const addGroup = useCallback((groupData) => {
@@ -637,6 +699,7 @@ export const CalendarProvider = ({ children }) => {
     loading,
     groups,
     visibleCalendarIds,
+    selectedCategories,
     // Caching system
     allCachedEvents,
     eventsLoading,
@@ -655,6 +718,11 @@ export const CalendarProvider = ({ children }) => {
     toggleCalendarVisibility,
     setCalendarsVisible,
     isCalendarVisible,
+    // Category filters
+    toggleCategoryFilter,
+    isCategorySelected,
+    selectAllCategories,
+    clearAllCategories,
     // Groups
     addGroup,
     updateGroup,
@@ -663,10 +731,11 @@ export const CalendarProvider = ({ children }) => {
     isGroupVisible,
     isGroupPartiallyVisible,
   }), [
-    calendars, sharedCalendars, events, loading, groups, visibleCalendarIds,
+    calendars, sharedCalendars, events, loading, groups, visibleCalendarIds, selectedCategories,
     allCachedEvents, eventsLoading, eventsLoaded, loadAllEvents,
     fetchCalendars, fetchCalendarEvents, fetchSharedCalendars,
     toggleCalendarVisibility, setCalendarsVisible, isCalendarVisible,
+    toggleCategoryFilter, isCategorySelected, selectAllCategories, clearAllCategories,
     addGroup, updateGroup, deleteGroup, toggleGroupVisibility, isGroupVisible, isGroupPartiallyVisible
   ]);
 

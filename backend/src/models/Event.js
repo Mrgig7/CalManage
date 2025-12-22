@@ -15,6 +15,11 @@ const eventSchema = mongoose.Schema({
     type: String,
     required: [true, 'Please add a title'],
   },
+  category: {
+    type: String,
+    required: [true, 'Please select a category'],
+    enum: ['personal', 'business', 'academic', 'health', 'social', 'travel', 'finance'],
+  },
   description: {
     type: String,
   },

@@ -48,7 +48,7 @@ const getEvents = async (req, res) => {
 // @access  Private
 const createEvent = async (req, res) => {
   const { 
-    title, start, end, description, location, allDay, recurrence, reminders, participants,
+    title, category, start, end, description, location, allDay, recurrence, reminders, participants,
     // Meeting-specific fields
     isMeeting, meetingLink, meetingPlatform, attendees 
   } = req.body;
@@ -66,6 +66,7 @@ const createEvent = async (req, res) => {
     calendar: calendarId,
     createdBy: req.user.id,
     title,
+    category,
     start,
     end,
     description,
@@ -311,6 +312,7 @@ const updateEvent = async (req, res) => {
 
   const updateData = {};
   if (typeof req.body.title !== 'undefined') updateData.title = req.body.title;
+  if (typeof req.body.category !== 'undefined') updateData.category = req.body.category;
   if (typeof req.body.start !== 'undefined') updateData.start = req.body.start;
   if (typeof req.body.end !== 'undefined') updateData.end = req.body.end;
   if (typeof req.body.description !== 'undefined') updateData.description = req.body.description;

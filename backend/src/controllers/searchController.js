@@ -42,16 +42,25 @@ const search = async (req, res) => {
     // All accessible calendar IDs
     const allCalendarIds = [...ownCalendarIds, ...sharedCalendarIds];
 
-    // Search events (title, description) in accessible calendars
-    const events = await Event.find({
+    // Build event query with optional category filter
+    const { category } = req.query;
+    const eventQuery = {
       calendar: { $in: allCalendarIds },
       $or: [
         { title: searchRegex },
         { description: searchRegex }
       ]
-    })
+    };
+    
+    // Add category filter if specified
+    if (category) {
+      eventQuery.category = category;
+    }
+
+    // Search events (title, description) in accessible calendars
+    const events = await Event.find(eventQuery)
     .populate('calendar', 'name color')
-    .select('title description start end calendar allDay')
+    .select('title description start end calendar allDay category isMeeting')
     .sort({ start: 1 })
     .limit(10);
 
@@ -77,6 +86,8 @@ const search = async (req, res) => {
         start: e.start,
         end: e.end,
         allDay: e.allDay,
+        category: e.category,
+        isMeeting: e.isMeeting,
         calendarName: e.calendar?.name,
         calendarColor: e.calendar?.color
       })),

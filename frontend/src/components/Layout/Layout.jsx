@@ -21,7 +21,14 @@ import {
   Edit3,
   Loader2,
   Clock,
-  FileText
+  FileText,
+  Tag,
+  User,
+  Briefcase,
+  GraduationCap,
+  Heart,
+  Plane,
+  DollarSign
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import CalendarModal from '../Modals/CalendarModal';
@@ -42,7 +49,9 @@ const Layout = () => {
     deleteGroup,
     toggleGroupVisibility,
     isGroupVisible,
-    isGroupPartiallyVisible
+    isGroupPartiallyVisible,
+    toggleCategoryFilter,
+    isCategorySelected
   } = useCalendar();
   const navigate = useNavigate();
   const location = useLocation();
@@ -74,6 +83,7 @@ const Layout = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(-1);
+  const [searchCategoryFilter, setSearchCategoryFilter] = useState('');
   const searchRef = useRef(null);
   const searchTimeoutRef = useRef(null);
 
@@ -85,7 +95,7 @@ const Layout = () => {
   const isActive = (path) => location.pathname === path;
 
   // Search function with debounce
-  const performSearch = useCallback(async (query) => {
+  const performSearch = useCallback(async (query, categoryFilter = '') => {
     if (!query || query.length < 2) {
       setSearchResults({ events: [], calendars: [], tasks: [] });
       setIsSearchOpen(false);
@@ -94,7 +104,11 @@ const Layout = () => {
 
     setIsSearching(true);
     try {
-      const res = await fetch(`http://localhost:5000/api/search?q=${encodeURIComponent(query)}`, {
+      let url = `http://localhost:5000/api/search?q=${encodeURIComponent(query)}`;
+      if (categoryFilter) {
+        url += `&category=${encodeURIComponent(categoryFilter)}`;
+      }
+      const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -119,8 +133,15 @@ const Layout = () => {
       clearTimeout(searchTimeoutRef.current);
     }
     searchTimeoutRef.current = setTimeout(() => {
-      performSearch(query);
+      performSearch(query, searchCategoryFilter);
     }, 300);
+  };
+
+  const handleCategoryFilterChange = (category) => {
+    setSearchCategoryFilter(category);
+    if (searchQuery.length >= 2) {
+      performSearch(searchQuery, category);
+    }
   };
 
   const handleSearchKeyDown = (e) => {
@@ -313,6 +334,57 @@ const Layout = () => {
                     <NavItem to="/" icon={LayoutDashboard}>Dashboard</NavItem>
                     <NavItem to="/calendar" icon={CalendarIcon}>Calendar</NavItem>
                     <NavItem to="/tasks" icon={CheckSquare}>Tasks</NavItem>
+                  </nav>
+                </div>
+
+                {/* EVENT CATEGORIES Section */}
+                <div className="mb-6">
+                  <div className="flex items-center justify-between mb-2 px-2">
+                    <h3 className="text-[10px] font-bold text-teal-400 uppercase tracking-widest flex items-center gap-1">
+                      <Tag className="w-3 h-3" />
+                      Event Categories
+                    </h3>
+                  </div>
+                  <nav className="space-y-1">
+                    {[
+                      { id: 'personal', label: 'Personal', icon: User, color: '#3b82f6' },
+                      { id: 'business', label: 'Business', icon: Briefcase, color: '#6366f1' },
+                      { id: 'academic', label: 'Academic', icon: GraduationCap, color: '#8b5cf6' },
+                      { id: 'health', label: 'Health', icon: Heart, color: '#f43f5e' },
+                      { id: 'social', label: 'Social', icon: Users, color: '#f59e0b' },
+                      { id: 'travel', label: 'Travel', icon: Plane, color: '#06b6d4' },
+                      { id: 'finance', label: 'Finance', icon: DollarSign, color: '#10b981' },
+                    ].map((cat) => {
+                      const Icon = cat.icon;
+                      const isSelected = isCategorySelected(cat.id);
+                      return (
+                        <motion.div
+                          key={cat.id}
+                          whileHover={{ x: 4 }}
+                          onClick={() => toggleCategoryFilter(cat.id)}
+                          className={`flex items-center px-3 py-2 text-sm font-medium rounded-lg hover:bg-white/5 cursor-pointer group transition-all ${
+                            isSelected ? 'text-gray-300' : 'text-gray-600'
+                          }`}
+                        >
+                          <div
+                            className={`w-3 h-3 rounded-sm mr-3 border-2 flex items-center justify-center transition-all ${
+                              isSelected ? 'border-transparent' : 'border-gray-600'
+                            }`}
+                            style={{ backgroundColor: isSelected ? cat.color : 'transparent' }}
+                          >
+                            {isSelected && (
+                              <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </div>
+                          <Icon className="w-3.5 h-3.5 mr-2" style={{ color: isSelected ? cat.color : 'inherit' }} />
+                          <span className={`truncate transition-colors ${isSelected ? 'group-hover:text-white' : ''}`}>
+                            {cat.label}
+                          </span>
+                        </motion.div>
+                      );
+                    })}
                   </nav>
                 </div>
 
@@ -584,7 +656,7 @@ const Layout = () => {
                 onKeyDown={handleSearchKeyDown}
                 onFocus={() => searchQuery.length >= 2 && setIsSearchOpen(true)}
                 className="block w-64 pl-10 pr-3 py-2.5 border border-indigo-500/20 rounded-xl bg-white/5 text-white placeholder-indigo-300/30 focus:outline-none focus:bg-white/10 focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all text-sm backdrop-blur-sm"
-                placeholder="Search events, calendars, tasks..."
+                placeholder="Search events, calendars..."
               />
 
               {/* Search Results Dropdown */}
@@ -624,7 +696,31 @@ const Layout = () => {
                                         style={{ backgroundColor: event.calendarColor || '#3b82f6' }}
                                       />
                                       <div className="flex-1 min-w-0">
-                                        <p className="text-sm text-white font-medium truncate">{event.title}</p>
+                                        <div className="flex items-center gap-2">
+                                          <p className="text-sm text-white font-medium truncate">{event.title}</p>
+                                          {event.category && (() => {
+                                            const categoryInfo = {
+                                              personal: { color: '#3b82f6', label: 'Personal' },
+                                              business: { color: '#6366f1', label: 'Business' },
+                                              academic: { color: '#8b5cf6', label: 'Academic' },
+                                              health: { color: '#f43f5e', label: 'Health' },
+                                              social: { color: '#f59e0b', label: 'Social' },
+                                              travel: { color: '#06b6d4', label: 'Travel' },
+                                              finance: { color: '#10b981', label: 'Finance' },
+                                            }[event.category];
+                                            return categoryInfo ? (
+                                              <span 
+                                                className="text-[9px] px-1.5 py-0.5 rounded-full font-medium"
+                                                style={{ 
+                                                  backgroundColor: `${categoryInfo.color}20`,
+                                                  color: categoryInfo.color
+                                                }}
+                                              >
+                                                {categoryInfo.label}
+                                              </span>
+                                            ) : null;
+                                          })()}
+                                        </div>
                                         <div className="flex items-center gap-2 mt-1">
                                           <Clock className="w-3 h-3 text-gray-500" />
                                           <span className="text-[11px] text-gray-400">
@@ -649,29 +745,108 @@ const Layout = () => {
                                   Calendars
                                 </div>
                                 {searchResults.calendars.map((cal) => {
-                                  globalIndex++;
-                                  const idx = globalIndex;
+                                  const isVisible = isCalendarVisible(cal._id);
                                   return (
                                     <div
                                       key={cal._id}
-                                      onClick={() => handleSearchResultClick({ ...cal, type: 'calendar' })}
-                                      className={`px-4 py-3 cursor-pointer transition-colors flex items-center gap-3 ${
-                                        selectedSearchIndex === idx ? 'bg-indigo-500/20' : 'hover:bg-white/5'
-                                      }`}
+                                      onClick={() => toggleCalendarVisibility(cal._id)}
+                                      className="px-4 py-3 cursor-pointer transition-colors flex items-center gap-3 hover:bg-white/5"
                                     >
                                       <div
-                                        className="w-3 h-3 rounded-sm flex-shrink-0"
-                                        style={{ backgroundColor: cal.color || '#3b82f6' }}
-                                      />
-                                      <span className="text-sm text-white">{cal.name}</span>
+                                        className={`w-3 h-3 rounded-sm flex items-center justify-center transition-all ${
+                                          isVisible ? 'border-transparent' : 'border-2 border-gray-600'
+                                        }`}
+                                        style={{ backgroundColor: isVisible ? cal.color || '#3b82f6' : 'transparent' }}
+                                      >
+                                        {isVisible && (
+                                          <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                          </svg>
+                                        )}
+                                      </div>
+                                      <span className={`text-sm ${isVisible ? 'text-white' : 'text-gray-500'}`}>{cal.name}</span>
                                       {cal.isShared && (
                                         <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-400">Shared</span>
                                       )}
+                                      <span 
+                                        className="text-[9px] px-1.5 py-0.5 rounded-full font-medium ml-auto"
+                                        style={{ 
+                                          backgroundColor: isVisible ? `${cal.color || '#3b82f6'}20` : 'rgba(255,255,255,0.05)',
+                                          color: isVisible ? cal.color || '#3b82f6' : '#6b7280'
+                                        }}
+                                      >
+                                        {isVisible ? 'Visible' : 'Hidden'}
+                                      </span>
                                     </div>
                                   );
                                 })}
                               </div>
                             )}
+
+                            {/* Categories Section - Show matching categories */}
+                            {(() => {
+                              const allCategories = [
+                                { id: 'personal', label: 'Personal', icon: User, color: '#3b82f6' },
+                                { id: 'business', label: 'Business', icon: Briefcase, color: '#6366f1' },
+                                { id: 'academic', label: 'Academic', icon: GraduationCap, color: '#8b5cf6' },
+                                { id: 'health', label: 'Health', icon: Heart, color: '#f43f5e' },
+                                { id: 'social', label: 'Social', icon: Users, color: '#f59e0b' },
+                                { id: 'travel', label: 'Travel', icon: Plane, color: '#06b6d4' },
+                                { id: 'finance', label: 'Finance', icon: DollarSign, color: '#10b981' },
+                              ];
+                              const matchingCategories = allCategories.filter(cat => 
+                                cat.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                cat.id.toLowerCase().includes(searchQuery.toLowerCase())
+                              );
+                              
+                              if (matchingCategories.length === 0) return null;
+                              
+                              return (
+                                <div className="border-b border-white/5">
+                                  <div className="px-3 py-2 text-[10px] font-bold text-teal-400 uppercase tracking-wider bg-white/5 flex items-center gap-2">
+                                    <Tag className="w-3 h-3" />
+                                    Categories
+                                  </div>
+                                  {matchingCategories.map((cat) => {
+                                    const Icon = cat.icon;
+                                    const isSelected = isCategorySelected(cat.id);
+                                    return (
+                                      <div
+                                        key={cat.id}
+                                        onClick={() => {
+                                          toggleCategoryFilter(cat.id);
+                                        }}
+                                        className="px-4 py-3 cursor-pointer transition-colors flex items-center gap-3 hover:bg-white/5"
+                                      >
+                                        <div
+                                          className={`w-3 h-3 rounded-sm flex items-center justify-center transition-all ${
+                                            isSelected ? 'border-transparent' : 'border-2 border-gray-600'
+                                          }`}
+                                          style={{ backgroundColor: isSelected ? cat.color : 'transparent' }}
+                                        >
+                                          {isSelected && (
+                                            <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                            </svg>
+                                          )}
+                                        </div>
+                                        <Icon className="w-4 h-4" style={{ color: cat.color }} />
+                                        <span className="text-sm text-white">{cat.label}</span>
+                                        <span 
+                                          className="text-[9px] px-1.5 py-0.5 rounded-full font-medium ml-auto"
+                                          style={{ 
+                                            backgroundColor: `${cat.color}20`,
+                                            color: cat.color
+                                          }}
+                                        >
+                                          {isSelected ? 'Visible' : 'Hidden'}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })()}
 
                             {/* Tasks Section */}
                             {searchResults.tasks.length > 0 && (
