@@ -41,7 +41,8 @@ const CalendarPage = () => {
         allCachedEvents,
         eventsLoading,
         eventsLoaded,
-        loadAllEvents
+        loadAllEvents,
+        visibilityInitialized
     } = useCalendar();
     
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -52,15 +53,17 @@ const CalendarPage = () => {
     // Use cached events directly - no more loading on every navigation
     // Events are already enriched with calendar info in context
     // Filter by BOTH calendar visibility AND category visibility
+    // Skip calendar visibility filter when not yet initialized to prevent blank calendar
     const events = useMemo(() => {
         return allCachedEvents.filter(ev => {
-            // Must be in a visible calendar
-            if (!visibleCalendarIds.has(ev.calendarId)) return false;
+            // Skip visibility check if not initialized yet (show all events on first load)
+            // Once initialized, filter by visible calendars
+            if (visibilityInitialized && !visibleCalendarIds.has(ev.calendarId)) return false;
             // Must be in a selected category (or have no category for legacy events)
             if (ev.category && !selectedCategories.has(ev.category)) return false;
             return true;
         });
-    }, [allCachedEvents, visibleCalendarIds, selectedCategories]);
+    }, [allCachedEvents, visibleCalendarIds, selectedCategories, visibilityInitialized]);
 
     const nextPeriod = () => {
         if (view === 'month') setCurrentDate(addMonths(currentDate, 1));
