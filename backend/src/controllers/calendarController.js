@@ -1,5 +1,9 @@
 const Calendar = require('../models/Calendar');
 const Activity = require('../models/Activity');
+const Event = require('../models/Event');
+const CalendarShare = require('../models/CalendarShare');
+const PendingShare = require('../models/PendingShare');
+const Notification = require('../models/Notification');
 
 // @desc    Get user calendars
 // @route   GET /api/calendars
@@ -95,7 +99,7 @@ const updateCalendar = async (req, res) => {
   res.status(200).json(updatedCalendar);
 };
 
-// @desc    Delete a calendar
+// @desc    Delete a calendar and all related data
 // @route   DELETE /api/calendars/:id
 // @access  Private
 const deleteCalendar = async (req, res) => {
@@ -115,13 +119,37 @@ const deleteCalendar = async (req, res) => {
     return res.status(401).json({ message: 'User not authorized' });
   }
 
-  if (calendar.isDefault && req.query.allowDefaultDelete !== 'true') {
-    return res.status(400).json({ message: 'Default calendar can only be removed from account settings' });
+  // Prevent deletion of default calendar
+  if (calendar.isDefault) {
+    return res.status(400).json({ message: 'Cannot delete the default calendar' });
   }
 
+  const calendarId = req.params.id;
+
+  // Delete all events belonging to this calendar
+  await Event.deleteMany({ calendar: calendarId });
+
+  // Delete all shares for this calendar
+  await CalendarShare.deleteMany({ calendar: calendarId });
+
+  // Delete all pending shares for this calendar
+  await PendingShare.deleteMany({ calendar: calendarId });
+
+  // Delete notifications related to events in this calendar
+  await Notification.deleteMany({ calendar: calendarId });
+
+  // Log the deletion activity
+  await Activity.create({
+    user: req.user.id,
+    action: 'deleted',
+    target: 'Calendar',
+    details: `Deleted calendar "${calendar.name}" and all its events`,
+  });
+
+  // Finally delete the calendar
   await calendar.deleteOne();
 
-  res.status(200).json({ id: req.params.id });
+  res.status(200).json({ id: calendarId, message: 'Calendar and all related data deleted' });
 };
 
 module.exports = {

@@ -13,7 +13,8 @@ export const CalendarProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [groups, setGroups] = useState([]);
   const [visibleCalendarIds, setVisibleCalendarIds] = useState(new Set());
-  const [selectedCategories, setSelectedCategories] = useState(new Set());
+  // Initialize with all default categories to prevent race condition on first render
+  const [selectedCategories, setSelectedCategories] = useState(new Set(['personal', 'business', 'academic', 'health', 'social', 'travel', 'finance']));
   const { token, user } = useAuth();
 
   // ========== CACHING SYSTEM ==========
@@ -101,13 +102,15 @@ export const CalendarProvider = ({ children }) => {
     }
   }, [user]);
 
-  // Track if visibility has been initialized
+  // Track if visibility has been initialized (expose as state for consumers)
+  const [visibilityInitialized, setVisibilityInitialized] = useState(false);
   const visibilityInitializedRef = useRef(false);
 
   // Initialize visibility when calendars are loaded (only once)
   useEffect(() => {
     if ((calendars.length > 0 || sharedCalendars.length > 0) && !visibilityInitializedRef.current) {
       visibilityInitializedRef.current = true;
+      setVisibilityInitialized(true);
       const savedVisibility = loadVisibilityPreferences();
       if (savedVisibility && savedVisibility.size > 0) {
         setVisibleCalendarIds(savedVisibility);
@@ -409,6 +412,45 @@ export const CalendarProvider = ({ children }) => {
     }
   };
 
+  // Delete a calendar and all its related data
+  const deleteCalendar = async (calendarId) => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/calendars/${calendarId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        // Remove calendar from state
+        setCalendars(prev => prev.filter(c => c._id !== calendarId));
+        
+        // Remove from visibility set
+        setVisibleCalendarIds(prev => {
+          const next = new Set(prev);
+          next.delete(calendarId);
+          saveVisibilityPreferences(next);
+          return next;
+        });
+        
+        // Remove cached events for this calendar
+        setAllCachedEvents(prev => prev.filter(e => e.calendarId !== calendarId));
+        setEventCache(prev => {
+          const next = { ...prev };
+          delete next[calendarId];
+          return next;
+        });
+        
+        return { success: true, message: data.message };
+      }
+      return { success: false, error: data.message || 'Failed to delete calendar' };
+    } catch (error) {
+      console.error(error);
+      return { success: false, error: 'Failed to delete calendar' };
+    }
+  };
+
   // Optimized: Fetch single calendar events with caching
   const fetchCalendarEvents = useCallback(async (calendarId, forceRefresh = false) => {
     // Check cache first (if not forcing refresh)
@@ -707,6 +749,7 @@ export const CalendarProvider = ({ children }) => {
     loadAllEvents,
     // Calendar CRUD
     addCalendar,
+    deleteCalendar,
     fetchCalendars,
     fetchEvents,
     fetchCalendarEvents,
@@ -730,10 +773,11 @@ export const CalendarProvider = ({ children }) => {
     toggleGroupVisibility,
     isGroupVisible,
     isGroupPartiallyVisible,
+    visibilityInitialized,
   }), [
     calendars, sharedCalendars, events, loading, groups, visibleCalendarIds, selectedCategories,
-    allCachedEvents, eventsLoading, eventsLoaded, loadAllEvents,
-    fetchCalendars, fetchCalendarEvents, fetchSharedCalendars,
+    allCachedEvents, eventsLoading, eventsLoaded, loadAllEvents, visibilityInitialized,
+    fetchCalendars, fetchCalendarEvents, fetchSharedCalendars, deleteCalendar,
     toggleCalendarVisibility, setCalendarsVisible, isCalendarVisible,
     toggleCategoryFilter, isCategorySelected, selectAllCategories, clearAllCategories,
     addGroup, updateGroup, deleteGroup, toggleGroupVisibility, isGroupVisible, isGroupPartiallyVisible

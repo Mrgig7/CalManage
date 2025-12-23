@@ -51,13 +51,19 @@ const Layout = () => {
     isGroupVisible,
     isGroupPartiallyVisible,
     toggleCategoryFilter,
-    isCategorySelected
+    isCategorySelected,
+    deleteCalendar
   } = useCalendar();
   const navigate = useNavigate();
   const location = useLocation();
   const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [eventSelectedDate, setEventSelectedDate] = useState(new Date());
+
+  // Delete calendar confirmation modal state
+  const [calendarToDelete, setCalendarToDelete] = useState(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Share Modal State
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -279,6 +285,27 @@ const Layout = () => {
     } catch (error) { console.error(error); }
   };
 
+  // Handle calendar deletion with confirmation
+  const handleDeleteCalendarConfirm = async () => {
+    if (!calendarToDelete) return;
+    
+    setIsDeleting(true);
+    try {
+      const result = await deleteCalendar(calendarToDelete._id);
+      if (result.success) {
+        setIsDeleteModalOpen(false);
+        setCalendarToDelete(null);
+      } else {
+        alert(result.error || 'Failed to delete calendar');
+      }
+    } catch (error) {
+      console.error('Error deleting calendar:', error);
+      alert('Failed to delete calendar');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const NavItem = ({ to, icon: Icon, children }) => (
     <Link to={to}>
       <motion.div 
@@ -425,16 +452,32 @@ const Layout = () => {
                               {cal.name}
                             </span>
                         </div>
-                        {!cal.isDefault && <button 
-                          onClick={(e) => {
-                              e.stopPropagation();
-                              setCalendarToShare(cal);
-                              setIsShareModalOpen(true);
-                          }}
-                          className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 p-1 transition-all"
-                        >
-                          <Users className="w-3 h-3" />
-                        </button>}
+                        {!cal.isDefault && (
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                            <button 
+                              onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCalendarToShare(cal);
+                                  setIsShareModalOpen(true);
+                              }}
+                              className="text-gray-500 hover:text-blue-400 p-1 transition-all"
+                              title="Share calendar"
+                            >
+                              <Users className="w-3 h-3" />
+                            </button>
+                            <button 
+                              onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCalendarToDelete(cal);
+                                  setIsDeleteModalOpen(true);
+                              }}
+                              className="text-gray-500 hover:text-red-400 p-1 transition-all"
+                              title="Delete calendar"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
                       </motion.div>
                     ))}
                   </nav>
@@ -1112,6 +1155,71 @@ const Layout = () => {
                   >
                     Create Group
                   </button>
+                </div>
+                </GlassPanel>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Calendar Confirmation Modal */}
+      <AnimatePresence>
+        {isDeleteModalOpen && calendarToDelete && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+              onClick={() => !isDeleting && setIsDeleteModalOpen(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            >
+              <GlassPanel className="relative w-full max-w-md p-6 bg-black/80 border-red-500/20">
+                <div className="text-center">
+                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-500/20 border border-red-500/30 flex items-center justify-center">
+                    <Trash2 className="w-8 h-8 text-red-400" />
+                  </div>
+                  <h3 className="text-xl font-bold text-white mb-2">Delete Calendar</h3>
+                  <p className="text-gray-400 mb-2">
+                    Are you sure you want to delete <span className="text-white font-semibold">"{calendarToDelete.name}"</span>?
+                  </p>
+                  <p className="text-sm text-red-400/80 mb-6">
+                    ⚠️ This will permanently delete all events, notifications, and shares associated with this calendar. This action cannot be undone.
+                  </p>
+                  
+                  <div className="flex gap-3 justify-center">
+                    <button
+                      onClick={() => {
+                        setIsDeleteModalOpen(false);
+                        setCalendarToDelete(null);
+                      }}
+                      disabled={isDeleting}
+                      className="px-6 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-sm font-medium transition-all disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleDeleteCalendarConfirm}
+                      disabled={isDeleting}
+                      className="px-6 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl text-sm font-semibold shadow-lg shadow-red-500/20 transition-all disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {isDeleting ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Deleting...
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="w-4 h-4" />
+                          Delete Calendar
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </GlassPanel>
             </motion.div>

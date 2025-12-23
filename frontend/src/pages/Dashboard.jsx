@@ -75,7 +75,8 @@ const Dashboard = () => {
     selectedCategories,
     // Use cached events from context
     allCachedEvents,
-    eventsLoading
+    eventsLoading,
+    visibilityInitialized
   } = useCalendar();
   
   const [currentDate, setCurrentDate] = useState(new Date()); 
@@ -128,12 +129,13 @@ const Dashboard = () => {
 
   // Use cached events - filter to today's events only
   // Also filter by BOTH calendar visibility AND category visibility
+  // Skip visibility check if not yet initialized to prevent blank calendar on first load
   const todaysEvents = useMemo(() => {
     const today = startOfToday();
     return allCachedEvents
       .filter(ev => {
-        // Must be in a visible calendar
-        if (!visibleCalendarIds.has(ev.calendarId)) return false;
+        // Skip visibility check if not initialized yet (show all events on first load)
+        if (visibilityInitialized && !visibleCalendarIds.has(ev.calendarId)) return false;
         // Must be in a selected category (or have no category for legacy events)
         if (ev.category && !selectedCategories.has(ev.category)) return false;
         return true;
@@ -143,7 +145,7 @@ const Dashboard = () => {
         return isSameDay(start, today);
       })
       .sort((a, b) => compareAsc(new Date(a.start), new Date(b.start)));
-  }, [allCachedEvents, visibleCalendarIds, selectedCategories]);
+  }, [allCachedEvents, visibleCalendarIds, selectedCategories, visibilityInitialized]);
 
   const now = new Date();
   
